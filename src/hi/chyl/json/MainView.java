@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -377,6 +378,11 @@ public class MainView extends FrameView {
             } catch (IOException ex) {
                 Exceptions.printStackTrace(ex);
             }
+        }
+        try {
+            Files.setAttribute(cachePath, "dos:hidden", true, LinkOption.NOFOLLOW_LINKS);
+        } catch (IOException ex) {
+            Exceptions.printStackTrace(ex);
         }
         Path lastFile = Paths.get(".", "cache", "lastFiles.last~");
         if (!Files.exists(lastFile)) {
