@@ -36,12 +36,18 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import javax.swing.ActionMap;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
@@ -90,6 +96,8 @@ import org.netbeans.swing.tabcontrol.TabDataModel;
 import org.netbeans.swing.tabcontrol.TabbedContainer;
 import org.netbeans.swing.tabcontrol.event.ComplexListDataEvent;
 import org.netbeans.swing.tabcontrol.event.ComplexListDataListener;
+import org.openide.util.Exceptions;
+import static org.apache.commons.lang.ArrayUtils.isEmpty;
 
 public class MainView extends FrameView {
     private JDialog     aboutBox;
@@ -116,6 +124,7 @@ public class MainView extends FrameView {
         getFrame().setIconImage(ico);
         setToolBar(createToolBar());
         setMenuBar(createMenuBar());
+        checkCacheFIleSetting();
         initTabbedContainer();
         setComponent(tabbedContainer);
     }
@@ -360,11 +369,40 @@ public class MainView extends FrameView {
 
         return menuBar;
     }
-
+    private void checkCacheFIleSetting() {
+        Path cachePath = Paths.get(".", "cache");
+        if (!Files.exists(cachePath)) {
+            try {
+                Files.createDirectories(cachePath);
+            } catch (IOException ex) {
+                Exceptions.printStackTrace(ex);
+            }
+        }
+        Path lastFile = Paths.get(".", "cache", "lastFiles.last~");
+        if (!Files.exists(lastFile)) {
+            try {
+                Files.createFile(lastFile);
+            } catch (IOException ex) {
+                Exceptions.printStackTrace(ex);
+            }
+        }
+    }
 
     private void initTabbedContainer() {
-        TabData tabData = newTabData("Welcome!","This is a Tab!",null);
-	tabDataModel = new DefaultTabDataModel(new TabData[] { tabData });
+        ArrayList<TabData> tabDatas = new ArrayList();
+        Path lastFile = Paths.get(".", "cache", "lastFiles.last~");
+        try (Stream<String> lines = Files.lines(lastFile)) {
+            lines.forEach((file) -> {
+                Paths.get(file).toFile().getName();
+                tabDatas.add(newTabData("", file, null));
+            });
+        } catch (IOException ex) {
+            Exceptions.printStackTrace(ex);
+        }
+        if (tabDatas.size() < 1) {
+            tabDatas.add(newTabData("Welcome!", "This is a Tab!", null));
+        }
+	tabDataModel = new DefaultTabDataModel(tabDatas.toArray(new TabData[tabDatas.size()]));
 	tabbedContainer = new TabbedContainer(tabDataModel,TabbedContainer.TYPE_EDITOR);
         tabbedContainer.getSelectionModel().setSelectedIndex(0);
         tabbedContainer.setShowCloseButton(true);
@@ -420,7 +458,15 @@ public class MainView extends FrameView {
         });
 
         RSyntaxTextArea textArea = newTextArea();
-       
+        String fileContent = "";
+        try {
+            tabName = Paths.get(tabTip).toFile().getName();
+            fileContent = new String(Files.readAllBytes(Paths.get(tabTip)));
+        } catch (IOException ex) {
+            tabName = "NewTab";
+            Exceptions.printStackTrace(ex);
+        }
+        textArea.setText(fileContent);
 //        textArea.set
         RTextScrollPane sp = new RTextScrollPane(textArea);
         sp.setFoldIndicatorEnabled(true);
@@ -553,13 +599,16 @@ public class MainView extends FrameView {
         int selIndex = getTabIndex();
         if(selIndex >= 0){
             TabData selTabData = tabDataModel.getTab(selIndex);
-            JSplitPane selSplitPane = (JSplitPane)selTabData.getComponent();
-            JScrollPane sp = (JScrollPane)selSplitPane.getLeftComponent();
-            JViewport vp = (JViewport)sp.getComponent(0);
-            JTextArea ta = (JTextArea)vp.getComponent(0);
-            return ta;
+            return getTextArea(selTabData);
         }
         return null;
+    }
+    private JTextArea getTextArea(TabData tabData) {
+            JSplitPane selSplitPane = (JSplitPane) tabData.getComponent();
+            JScrollPane sp = (JScrollPane) selSplitPane.getLeftComponent();
+            JViewport vp = (JViewport) sp.getComponent(0);
+            JTextArea ta = (JTextArea) vp.getComponent(0);
+            return ta;
     }
 
      private JTree getTree(TabData tabData){
@@ -1063,6 +1112,39 @@ public class MainView extends FrameView {
         }
     }
 
+    void storeOpenedFiles() {
+        List<String> filePaths = new ArrayList();
+        tabDataModel.getTabs().forEach((tab) -> {
+            String filePath = tab.getTooltip();
+            String fileName = tab.getText();
+            Path path = Paths.get(filePath);
+            if (!Files.exists(path)) {
+                String file = "./cache/" + fileName;
+                path = Paths.get(file);
+                int i = 0;
+                while (Files.exists(path)) {
+                    path = Paths.get(file + "" + i);
+                    i++;
+                }
+                try {
+                    Files.createFile(path);
+                    String content = getTextArea(tab).getText();
+                    Files.write(path, content.getBytes());
+                } catch (IOException ex) {
+                    Exceptions.printStackTrace(ex);
+                }
+            }
+            filePaths.add(path.toString());
+            try {
+                Files.write(Paths.get(".","cache","lastFiles.last~"), filePaths);
+            } catch (IOException ex) {
+                Exceptions.printStackTrace(ex);
+            }
+        });     
+    }
+
+
+
     private class TreeMouseListener implements MouseListener {
         private JTree tree;
         public TreeMouseListener(JTree tree){
@@ -1343,7 +1425,10 @@ public class MainView extends FrameView {
                 }
             }
         }
-        textArea.setText(sb.toString());
+        TabData newTab = newTabData(title,file.getAbsolutePath(),null);
+        int lastPos = tabDataModel.size();
+        tabDataModel.addTab(lastPos, newTab);
+        tabbedContainer.getSelectionModel().setSelectedIndex(lastPos);
         formatJson();
     }
 
@@ -1410,5 +1495,10 @@ public class MainView extends FrameView {
                 }
             }
         }
+        int pos = getTabIndex();
+        tabbedContainer.setTitleAt(pos, file.getName());
+        tabbedContainer.setToolTipTextAt(pos, file.getAbsolutePath());
+        
+
     }
 }

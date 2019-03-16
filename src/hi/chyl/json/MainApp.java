@@ -19,6 +19,15 @@ public class MainApp extends SingleFrameApplication {
         show(new MainView(this));
     }
 
+    @Override
+    protected void shutdown() {
+       MainView mainView = (MainView) getMainView();
+       mainView.storeOpenedFiles();
+        super.shutdown(); //To change body of generated methods, choose Tools | Templates.
+    }
+    
+    
+
     /**
      * This method is to initialize the specified window by injecting resources.
      * Windows shown in our application come fully initialized from the GUI
