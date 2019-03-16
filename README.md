@@ -10,7 +10,7 @@ HiJson使用java开发，基于gson包，格式化json字符并以树的形式�
 
 ## Requirement
 
-* NetBeans IDE 8
+* NetBeans IDE 10
 * JDK 1.8 or higher
 
 
